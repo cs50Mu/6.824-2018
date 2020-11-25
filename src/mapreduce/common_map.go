@@ -1,7 +1,11 @@
 package mapreduce
 
 import (
+	"encoding/json"
 	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"os"
 )
 
 func doMap(
@@ -32,6 +36,7 @@ func doMap(
 	// Look at Go's ioutil and os packages for functions to read
 	// and write files.
 	//
+
 	// Coming up with a scheme for how to format the key/value pairs on
 	// disk can be tricky, especially when taking into account that both
 	// keys and values could contain newlines, quotes, and any other
@@ -53,6 +58,34 @@ func doMap(
 	//
 	// Your code here (Part I).
 	//
+	var err error
+	fileContent, _ := ioutil.ReadFile(inFile)
+	kvs := mapF(inFile, string(fileContent))
+	tmpFiles := make([]*os.File, nReduce)
+	// create files
+	for i := 0; i < nReduce; i++ {
+		fileName := reduceName(jobName, mapTask, i)
+		tmpFile, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+		if err != nil {
+			log.Fatalf("open file failed, err: %v", err)
+		}
+		tmpFiles[i] = tmpFile
+	}
+	for _, kv := range kvs {
+		reduceIndex := ihash(kv.Key) % nReduce
+		file := tmpFiles[reduceIndex]
+		// log.Printf("writing to tmpFile: %+v\n", file.Name())
+		enc := json.NewEncoder(file)
+		err = enc.Encode(kv)
+		if err != nil {
+			log.Fatalf("encode json failed, err: %v", err)
+		}
+	}
+	// close files
+	// 并发问题？  不会，因为不会有其它进程来写入这些文件了
+	for _, f := range tmpFiles {
+		f.Close()
+	}
 }
 
 func ihash(s string) int {
